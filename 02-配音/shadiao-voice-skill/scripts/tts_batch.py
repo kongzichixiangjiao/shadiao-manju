@@ -333,7 +333,8 @@ def run_clone(lines, out_dir, alpha, overwrite=False, dry_run=False):
     if not MAKE_EMOTION.is_file():
         die(f"找不到 IndexTTS 入口：{MAKE_EMOTION}")
     wav_dir = out_dir / "_wav"
-    wav_dir.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        wav_dir.mkdir(parents=True, exist_ok=True)
 
     table = out_dir / "_clone_table.csv"
     with open(table, "w", encoding="utf-8-sig", newline="") as f:
@@ -445,7 +446,8 @@ def main():
         out_dir.relative_to(sd.resolve())
     except ValueError:
         die(f"--outdir 必须在季目录内：{sd}\n  实际给了：{out_dir}")
-    out_dir.mkdir(parents=True, exist_ok=True)
+    if not args.dry_run:
+        out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f">> 项目：{args.project} · 第{args.season:02d}季 · 第{args.episode:02d}集")
     print(f">> 剧本：{script_path}")
@@ -458,7 +460,11 @@ def main():
 
     if args.dry_run:
         if args.engine == "clone":
-            return run_clone(lines, out_dir, args.alpha, dry_run=True)
+            # 只打印计划：不建目录、不写 _clone_table.csv、不调 IndexTTS
+            print(">> [dry-run] 不落盘；正式跑会写 _clone_table.csv 和 _wav/")
+            for item in lines:
+                print(f"   {item['seq']:>3} [{item['preset'].get('voice', '?')}] {item['emotion']}  {item['text']}")
+            return 0
         for item in lines:
             print(f"   {item['seq']:>3} [{item['voice']}] {item['emotion']}  {item['text']}")
         return 0

@@ -29,13 +29,15 @@ from urllib.parse import urlparse
 
 from openai import OpenAI
 
+from ark_key import get_key, missing_key_hint
+
 DEFAULT_MODEL = "doubao-seedream-5-0-pro-260628"
 ARK_BASE = "https://ark.cn-beijing.volces.com/api/v3"
 
 
 def find_key():
-    # 只认进程环境变量：不读配置文件、不碰 $HOME 下的任何东西
-    return os.environ.get("ARK_API_KEY", "").strip()
+    # 密钥读取隔离在 ark_key.py：本文件不碰环境变量，也不碰任何配置文件
+    return get_key()
 
 
 def to_data_url(path):
@@ -115,7 +117,7 @@ def main():
 
     key = find_key()
     if not key:
-        raise SystemExit("缺 ARK_API_KEY（先 export ARK_API_KEY=... 再跑；键值只从环境变量读）")
+        raise SystemExit(missing_key_hint())
 
     refs = [to_data_url(p) for p in args.refs]
     client = OpenAI(base_url=ARK_BASE, api_key=key, timeout=300)

@@ -9,6 +9,9 @@
 
 原理：从图片四边向内 flood fill，把接近纯白的连通区域设为透明。
 只吃「纯白背景」的图；复杂背景 / 渐变背景不适用。
+
+⚠️ 默认**原地覆盖**输入文件，但会先把原图备份成 `<名字>.orig.png`（已存在则不覆盖备份）。
+   不想要备份加 --no-backup。
 """
 
 import argparse
@@ -64,18 +67,34 @@ def flood_white(img, threshold):
 
 
 def soften_edge(img, threshold):
-    """把靠近透明的浅色像素做一点羽化，减少白边。"""
-    w, h = img.size
-    px = img.load()
-    for y in range(h):
-        for x in range(w):
-            r, g, b, a = px[x, y]
-            if a == 0:
-                continue
-            near_white = min(r, g, b)
-            if near_white >= threshold - 12:
-                alpha = int(max(0, 255 * (threshold - near_white) / max(1, 255 - threshold)))
-                px[x, y] = (r, g, b, min(a, alpha))
+    """只羽化「紧贴透明背景」的浅色像素，减少白边。
+
+    v0.8：只处理与透明像素相邻的那一圈。原实现对所有浅色像素降 alpha，
+    白脸 / 白衣服 / 白鞋这种被包住的白色前景也会被削成半透明。
+    """
+    arr = np.array(img.convert("RGBA"))
+    alpha = arr[..., 3]
+    transparent = alpha == 0
+
+    # 透明区域向外扩 1 px，得到「边缘带」
+    near_transparent = np.zeros_like(transparent)
+    near_transparent[1:, :] |= transparent[:-1, :]
+    near_transparent[:-1, :] |= transparent[1:, :]
+    near_transparent[:, 1:] |= transparent[:, :-1]
+    near_transparent[:, :-1] |= transparent[:, 1:]
+
+    rgb = arr[..., :3].astype(np.int16)
+    near_white = np.all(rgb >= threshold - 12, axis=2)
+    edge = near_white & ~transparent & near_transparent
+
+    if edge.any():
+        light = np.min(rgb, axis=2).astype(np.float32)
+        target = 255.0 * (threshold - light) / max(1, 255 - threshold)
+        target = np.clip(target, 0, 255)
+        arr[..., 3] = np.where(edge, np.minimum(alpha, target.astype(np.uint8)), alpha)
+
+    out = Image.fromarray(arr, "RGBA")
+    return out
 
 
 def trim(img):
@@ -105,16 +124,23 @@ def fill_enclosed_white(img, threshold):
     return Image.fromarray(arr, "RGBA")
 
 
-def process(path, threshold, do_trim, do_soften, fill_holes=False):
+def process(path, threshold, do_trim, do_soften, fill_holes=False, backup=True):
+    path = Path(path)
+    original = path.read_bytes()          # 先留底，处理失败也不会丢原图
     img = Image.open(path).convert("RGBA")
     flood_white(img, threshold)
     if fill_holes:
         img = fill_enclosed_white(img, threshold)
     if do_soften and not fill_holes:
-        soften_edge(img, threshold)
+        img = soften_edge(img, threshold)
     if do_trim:
         img = trim(img)
     img.save(path, "PNG", optimize=True)
+    if backup:
+        bak = path.with_name(path.stem + ".orig" + path.suffix)
+        if not bak.exists():
+            bak.write_bytes(original)
+            print(f"  · 原图已备份：{bak.name}")
     return img.size
 
 
@@ -125,6 +151,7 @@ def main():
     ap.add_argument("--trim", action="store_true", help="裁掉透明边")
     ap.add_argument("--no-soften", action="store_true", help="不做边缘羽化")
     ap.add_argument("--fill-holes", action="store_true", help="补回被轮廓包住的白色区域（白衣服/白脸必开）")
+    ap.add_argument("--no-backup", action="store_true", help="不保留 <名字>.orig.png 原图副本（默认保留）")
     args = ap.parse_args()
 
     for p in args.paths:
@@ -133,7 +160,7 @@ def main():
             print(f"  ! 跳过（不存在）：{path}", file=sys.stderr)
             continue
         try:
-            size = process(path, args.threshold, args.trim, not args.no_soften, args.fill_holes)
+            size = process(path, args.threshold, args.trim, not args.no_soften, args.fill_holes, not args.no_backup)
             print(f"  ✓ {path} → {size[0]}×{size[1]}")
         except Exception as e:
             print(f"  ✗ {path}：{e}", file=sys.stderr)

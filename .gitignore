@@ -33,6 +33,10 @@ npm-debug.log*
 99-项目/**/_熊猫版/
 99-项目/**/03-素材/背景/会议室-旧.png
 
+# 白底转透明留下的原图备份
+99-项目/**/*.orig.png
+99-项目/**/*.bak.png
+
 # macOS / 编辑器
 .DS_Store
 .AppleDouble

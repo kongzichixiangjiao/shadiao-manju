@@ -6,7 +6,7 @@ description: >
   把「剧本.json + 配音表.json + 素材索引.json」合成一个可直接在「沙雕动画小助手」里打开的 .anime 工程：
   自动建角色模板、演员、场景、脚本块，回填音频路径与时长，挂相机跟随动作，并做结构校验。
   纯 Node，无第三方依赖；schema 不兼容会直接报错。
-  触发词：.anime、生成工程、沙雕工程、build anime、工程校验、audioPath、ttsConfig、动作白名单。
+  触发词：.anime、沙雕工程、沙雕 .anime、build anime、回填 audioPath、ttsConfig、动作白名单。
 ---
 
 # 沙雕工程

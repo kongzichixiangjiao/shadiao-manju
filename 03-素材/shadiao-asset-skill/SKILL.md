@@ -219,6 +219,10 @@ python3 scripts/gen_seedream.py \
   --prompt "……" --size 1024x1536
 ```
 
+> ⚠️ 数据边界：prompt **和每一张 `--refs` 参考图（base64）都会发到火山方舟**。
+> 有版权的参考图、含真人的照片、未公开的角色设定，先确认能不能外发。
+> 不想联网就用宿主自带的本地生图，或手动准备素材。
+
 也可以走宿主自带的 `generate_image` / `edit_image`，或者即梦、可灵、Midjourney 等外部工具。
 
 **统一要求**：出图后按规范命名并放进 `03-素材/`，再跑 `make_index.py`。

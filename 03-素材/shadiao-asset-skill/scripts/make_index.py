@@ -21,7 +21,13 @@ REQUIRED_EXP = ["平静", "开心", "愤怒", "悲伤", "惊讶", "无语", "得
 def list_images(directory):
     if not directory.is_dir():
         return []
-    return sorted(p for p in directory.iterdir() if p.suffix.lower() in IMG_EXT)
+    # *.orig.png / *.bak.png 是白底转透明留下的原图备份，不算素材
+    skip = (".orig", ".bak")
+    return sorted(
+        p
+        for p in directory.iterdir()
+        if p.suffix.lower() in IMG_EXT and p.stem not in skip and not p.stem.endswith(skip)
+    )
 
 
 def main():

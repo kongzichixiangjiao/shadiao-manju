@@ -1,6 +1,6 @@
 ---
 name: shadiao-manju
-version: 1.0.3
+version: 1.0.4
 display_name: 沙雕漫剧
 display_name_en: Shadiao Manju
 description: >
@@ -283,9 +283,9 @@ node 04-工程/shadiao-anime-skill/scripts/validate_anime.mjs \
 | 无头 Chrome 导出 | 只访问 `localhost:5173` | 页面只加载本机 dev server；不要把它改成外网地址 |
 | `--engine say` / `--engine clone` | 不出本机 | 断网可用 |
 
-**密钥**：生图脚本只从环境变量 `$ARK_API_KEY` 读取，不打开任何配置文件，也不读 `~/.ssh`、`~/.aws`、浏览器配置等任何其他凭证。仓库里不含密钥。`setup_app.sh` 只跑 `npm install` 和 `npm run dev`，不碰任何配置文件；宿主 app 自己的配置由它自己管理。
+**密钥**：生图脚本只从环境变量 `$ARK_API_KEY` 读取，不打开任何配置文件，也不读 `~/.ssh`、`~/.aws`、浏览器配置等任何其他凭证。仓库里不含密钥。`00-工作台/setup_app.sh` 只跑 `npm install` 和 `npm run dev`，不碰任何配置文件；宿主 app 自己的配置由它自己管理。
 
-**本地文件**：`build_anime.mjs` 里所有素材、配音、嘴位路径都经过 `safeJoin()`，剧本或配音表里写 `../../` 会被直接拒绝；`--project` 剧名和角色名也要过 `assertSafeName()`（不许含 `/`）。`tts_batch.py` 同样校验剧名，`--outdir` 只能落在季目录内，`voices.json` 的 `cloneRef` 不能是绝对路径或跑出 skill 目录。示例 `render_ep.sh` 每次用 `mktemp -d` 建独立临时目录、退出时 `trap` 只删这一个，不会碰别的路径。
+**本地文件**：`04-工程/shadiao-anime-skill/scripts/build_anime.mjs` 里所有素材、配音、嘴位路径都经过 `safeJoin()`，剧本或配音表里写 `../../` 会被直接拒绝；`--project` 剧名和角色名也要过 `assertSafeName()`（不许含 `/`）。`02-配音/shadiao-voice-skill/scripts/tts_batch.py` 同样校验剧名，`--outdir` 只能落在季目录内，`02-配音/shadiao-voice-skill/voices.json` 的 `cloneRef` 不能是绝对路径或跑出 skill 目录。`99-项目/示例-周一打工人/render_ep.sh` 每次用 `mktemp -d` 建独立临时目录、退出时 `trap` 只删这一个，不会碰别的路径。
 
 ---
 
