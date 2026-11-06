@@ -17,7 +17,7 @@
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, resolve } from 'node:path';
-import { parseArgs, readJson, seasonDir, writeJson } from './lib/project.mjs';
+import { parseArgs, readJson, safeJoin, seasonDir, writeJson } from './lib/project.mjs';
 import { imageSize } from './lib/media.mjs';
 import {
   genId,
@@ -45,15 +45,36 @@ import {
 
 const args = parseArgs(process.argv.slice(2));
 
-const project = args.project;
+// 路径越界 / 输入不合法这类错误，只打一行说明，不要甩一屏堆栈
+process.on('uncaughtException', (e) => {
+  console.error(`✗ ${e?.message || e}`);
+  process.exit(2);
+});
+
+const project = typeof args.project === 'string' ? args.project : '';
 if (!project) {
   console.error('用法：node build_anime.mjs --project <剧名> [--season 1] [--episode 1]');
   process.exit(2);
 }
 
-const season = Number(args.season || 1);
-const episode = Number(args.episode || 1);
-const sd = seasonDir(project, season);
+const season = Number(args.season ?? 1);
+const episode = Number(args.episode ?? 1);
+if (!Number.isInteger(season) || season < 1 || season > 99) {
+  console.error(`✗ --season 必须是 1–99 的整数，实际是 ${args.season}`);
+  process.exit(2);
+}
+if (!Number.isInteger(episode) || episode < 1 || episode > 99) {
+  console.error(`✗ --episode 必须是 1–99 的整数，实际是 ${args.episode}`);
+  process.exit(2);
+}
+
+let sd;
+try {
+  sd = seasonDir(project, season);
+} catch (e) {
+  console.error(`✗ ${e.message}`);
+  process.exit(2);
+}
 
 const scriptPath = args.script ? resolve(args.script) : join(sd, '01-剧本', '剧本.json');
 const voicePath = args.voice ? resolve(args.voice) : join(sd, '02-配音', `第${String(episode).padStart(2, '0')}集`, '配音表.json');
@@ -123,7 +144,7 @@ const propByName = new Map();
 for (const p of assetsIndex.props || []) propByName.set(p.name, p);
 
 function copyAsset(srcRel, subdir, name) {
-  const src = join(sd, '03-素材', srcRel);
+  const src = safeJoin(sd, '03-素材', srcRel);
   if (!existsSync(src)) {
     warn(`素材不存在：${src}`);
     return null;
@@ -227,16 +248,17 @@ for (const c of script.characters || []) {
     warn(`角色「${c.name}」缺 body.png，已跳过`);
     continue;
   }
-  const srcBody = join(sd, '03-素材', asset.body);
+  const srcBody = safeJoin(sd, '03-素材', asset.body);
   if (!existsSync(srcBody)) {
     warn(`角色「${c.name}」body 不存在：${srcBody}，已跳过`);
     continue;
   }
-  const dstDir = join(cacheDir, 'assets', 'characters', c.name);
+  const charDir = String(c.name).replace(/[\\/:*?"<>|]/g, '_');
+  const dstDir = join(cacheDir, 'assets', 'characters', charDir);
   mkdirSync(dstDir, { recursive: true });
   const dst = join(dstDir, `body${extname(asset.body).toLowerCase() || '.png'}`);
-  copyFileSync(join(sd, '03-素材', asset.body), dst);
-  const rel = `${cacheDirName}/assets/characters/${c.name}/body${extname(asset.body).toLowerCase() || '.png'}`;
+  copyFileSync(safeJoin(sd, '03-素材', asset.body), dst);
+  const rel = `${cacheDirName}/assets/characters/${charDir}/body${extname(asset.body).toLowerCase() || '.png'}`;
   const size = imageSize(dst);
   const characterId = genId('char_');
   // v0.4：优先用「整身表情图」（8 个 material），没有才退回「表情贴脸」
@@ -245,12 +267,12 @@ for (const c of script.characters || []) {
   for (const emo of Object.keys(asset.fullBodies || {})) {
     const relFile = asset.fullBodies?.[emo];
     if (!relFile) continue;
-    const src = join(sd, '03-素材', relFile);
+    const src = safeJoin(sd, '03-素材', relFile);
     if (!existsSync(src)) continue;
     const dst = join(dstDir, `full_${emo}.png`);
     copyFileSync(src, dst);
     const matId = genId('mat_');
-    fullBodies.push({ name: emo, url: `${cacheDirName}/assets/characters/${c.name}/full_${emo}.png`, id: matId });
+    fullBodies.push({ name: emo, url: `${cacheDirName}/assets/characters/${charDir}/full_${emo}.png`, id: matId });
     fullByEmotion.set(emo, matId);
   }
 
@@ -259,7 +281,7 @@ for (const c of script.characters || []) {
   if (!fullBodies.length) for (const emo of EXPRESSION_NAMES) {
     const relFile = asset.expressions?.[emo];
     if (!relFile) continue;
-    const src = join(sd, '03-素材', relFile);
+    const src = safeJoin(sd, '03-素材', relFile);
     if (!existsSync(src)) continue;
     const dst = join(dstDir, `exp_${emo}.png`);
     copyFileSync(src, dst);
@@ -271,7 +293,7 @@ for (const c of script.characters || []) {
       gender: c.gender || asset.gender || 'other',
       defaultFrame: {
         id: genId('frame_'),
-        url: `${cacheDirName}/assets/characters/${c.name}/exp_${emo}.png`,
+        url: `${cacheDirName}/assets/characters/${charDir}/exp_${emo}.png`,
       },
       speakingFrames: [],
       anchor: { x: 0.5, y: 0.5 },
@@ -287,8 +309,8 @@ for (const c of script.characters || []) {
 
   // v0.6：嘴叠加层资源（03-素材/角色/<角色>/mouth.png + mouth.json）
   let mouth = null;
-  const mouthJsonPath = join(sd, '03-素材', '角色', c.name, 'mouth.json');
-  const mouthPngPath = join(sd, '03-素材', '角色', c.name, 'mouth.png');
+  const mouthJsonPath = safeJoin(sd, '03-素材', '角色', charDir, 'mouth.json');
+  const mouthPngPath = safeJoin(sd, '03-素材', '角色', charDir, 'mouth.png');
   if (existsSync(mouthJsonPath) && existsSync(mouthPngPath)) {
     try {
       const map = JSON.parse(readFileSync(mouthJsonPath, 'utf8'));
@@ -300,7 +322,7 @@ for (const c of script.characters || []) {
         id: mouthAssetId,
         name: `嘴-${c.name}`,
         type: 'static',
-        url: `${cacheDirName}/assets/characters/${c.name}/mouth.png`,
+        url: `${cacheDirName}/assets/characters/${charDir}/mouth.png`,
         width: msize.width,
         height: msize.height,
         createdAt: Date.now(),
@@ -684,7 +706,7 @@ for (const sid of sceneOrder) {
 
     // 拷贝音频
     if (m?.audio) {
-      const src = join(sd, m.audio);
+      const src = safeJoin(sd, m.audio);
       const dst = join(cacheDir, 'tts', `${hash}.mp3`);
       if (existsSync(src)) {
         if (!existsSync(dst)) copyFileSync(src, dst);

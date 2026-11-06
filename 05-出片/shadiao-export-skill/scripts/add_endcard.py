@@ -17,6 +17,7 @@
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -46,30 +47,43 @@ def probe(path):
     kv = dict(
         line.split("=", 1) for line in out.strip().splitlines() if "=" in line
     )
-    num, den = (kv.get("r_frame_rate", "30/1").split("/") + ["1"])[:2]
-    fps = float(num) / float(den or 1)
-    return int(kv["width"]), int(kv["height"]), fps, float(kv["duration"])
+    try:
+        num, den = (kv.get("r_frame_rate", "30/1").split("/") + ["1"])[:2]
+        fps = float(num) / float(den or 1)
+    except (ValueError, ZeroDivisionError):
+        fps = 30.0
+    if not (fps > 0):
+        fps = 30.0
+    try:
+        return int(kv["width"]), int(kv["height"]), fps, float(kv["duration"])
+    except (KeyError, ValueError):
+        raise SystemExit(f"✗ 读不出视频信息（宽高/时长）：{path}")
 
 
-def esc(text):
-    """ffmpeg drawtext 转义"""
-    return (
-        text.replace("\\", r"\\")
-        .replace(":", r"\:")
-        .replace("'", r"\'")
-        .replace("%", r"\%")
-    )
+def ff_path(path):
+    """filtergraph 里的路径：转义 \\ : ' , [ ] 会破坏参数解析的字符。"""
+    s = str(path)
+    for ch in ("\\", ":", "'", ",", "[", "]"):
+        s = s.replace(ch, "\\" + ch)
+    return s
 
 
-def make_card(path, size, fps, duration, lines, font, bg="0x0b0b0b", color="0xF2F2F2"):
+def make_card(path, size, fps, duration, lines, font, tmpdir, bg="0x0b0b0b"):
     w, h = size
-    filters = [
-        f"drawtext=font='{font}':text='{esc(t)}':fontsize={fs}"
-        f":fontcolor={col}:x=(w-text_w)/2:y={y}-text_h/2:"
-        f"enable='between(t,{delay},{duration})'"
-        for t, fs, y, col, delay in lines
-    ]
-    vf = ",".join(["format=yuv420p"] + filters)
+    # 字体名同样在 filtergraph 里，引号和换行会破坏解析
+    font = str(font).replace("'", "").replace("\n", " ").strip() or "PingFang SC"
+    filters = ["format=yuv420p"]
+    for i, (t, fs, y, col, delay) in enumerate(lines):
+        # 文案走 textfile：冒号、引号、花括号、百分号全都不用转义
+        text_file = os.path.join(tmpdir, f"line{i}.txt")
+        with open(text_file, "w", encoding="utf-8") as fh:
+            fh.write(str(t).replace("\r", " ").replace("\n", " "))
+        filters.append(
+            f"drawtext=font='{font}':textfile='{ff_path(text_file)}':expansion=none"
+            f":fontsize={fs}:fontcolor={col}:x=(w-text_w)/2:y={y}-text_h/2"
+            f":enable='between(t,{delay},{duration})'"
+        )
+    vf = ",".join(filters)
     run(
         [
             "ffmpeg", "-y", "-v", "error",
@@ -93,6 +107,11 @@ def main():
     ap.add_argument("--crf", default="20")
     args = ap.parse_args()
 
+    if not re.fullmatch(r"\d{1,2}", str(args.crf)):
+        ap.error(f"--crf 必须是 0–51 的整数，实际是 {args.crf}")
+    if not (0.2 <= args.duration <= 15):
+        ap.error(f"--duration 建议在 0.2–15 秒之间，实际是 {args.duration}")
+
     if not os.path.isfile(args.video):
         raise SystemExit(f"找不到视频：{args.video}")
 
@@ -109,7 +128,7 @@ def main():
             lines.append(
                 (args.line2, max(20, int(h * 0.020)), int(h * 0.56), "0xA8A8A8", 0)
             )
-        make_card(card, (w, h), fps, args.duration, lines, args.font)
+        make_card(card, (w, h), fps, args.duration, lines, args.font, tmp)
 
         # 音轨补齐静音，直接 concat
         out = args.out

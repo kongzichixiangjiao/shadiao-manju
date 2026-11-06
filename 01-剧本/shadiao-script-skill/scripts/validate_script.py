@@ -284,6 +284,21 @@ def check_json(path, md_lines, md_chars, md_scenes, rep):
 
     if md_lines and len(lines) != len(md_lines):
         rep.warn(f"JSON 台词 {len(lines)} 行 / Markdown {len(md_lines)} 行，不一致")
+    elif md_lines:
+        # 行数一致还不够：JSON 被改过但 Markdown 没改时，下游会念出没审过的台词
+        def norm(t):
+            return re.sub(r"[\s，。！？、；：…—\-「」『』“”‘’（）()]", "", (t or ""))
+
+        mismatch = 0
+        for jl, ml in zip(lines, md_lines):
+            if norm(jl.get("text")) != norm(ml.get("text")):
+                mismatch += 1
+                rep.error(
+                    f"JSON 第 {jl.get('seq', '?')} 行台词与 Markdown 不一致："
+                    f"JSON「{(jl.get('text') or '')[:20]}」/ MD「{(ml.get('text') or '')[:20]}」"
+                )
+        if mismatch:
+            rep.error(f"共 {mismatch} 行台词对不上：配音念的是 JSON，会绕过 Markdown 审稿，先对齐再合成")
 
     rep.note(f"JSON：{len(chars)} 角色 / {len(scenes)} 场景 / {len(lines)} 行")
 

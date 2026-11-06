@@ -4,7 +4,7 @@
 
 用法：
   python3 tts_batch.py --project 周一打工人 --season 1 --episode 1 --engine edge
-  python3 tts_batch.py --project 周一打工人 --season 1 --episode 1 --engine clone --alpha 0.6
+  python3 tts_batch.py --project 周一打工人 --season 1 --episode 1 --engine clone --clone-consent
   python3 tts_batch.py --project 周一打工人 --season 1 --episode 1 --engine edge --only 3,7,9
 
 输入：99-项目/<剧名>/第NN季/01-剧本/剧本.json
@@ -22,6 +22,7 @@ import csv
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -41,6 +42,9 @@ VOICE_LIB = TOOLCHAIN / "23-视频制作" / "10-音色制作" / "voice-timbre-li
 MAKE_EMOTION = VOICE_LIB / "scripts" / "make_emotion.py"
 DOUYIN_DIR = TOOLCHAIN / "23-视频制作" / "10-音色制作" / "抖音"
 DEFAULT_CLONE = VOICE_LIB / "assets" / "source" / "音色音频" / "aishell3" / "SSB0623.wav"
+
+# 抖音参考音频来源未登记授权，默认不许进入克隆合成
+UNVERIFIED_REF_ROOT = DOUYIN_DIR
 
 NARRATION_SPEAKERS = {"旁白", "叙述", "解说"}
 
@@ -78,8 +82,21 @@ def load_voices():
     return json.loads(VOICES_PATH.read_text(encoding="utf-8"))
 
 
+SAFE_NAME_RE = re.compile(r'^[^\\/:*?"<>|\x00-\x1f]{1,64}$')
+
+
+def safe_name(name, what="剧名"):
+    """剧名会拼进路径：不许带分隔符，不许是 . / .."""
+    s = str(name or "").strip()
+    if not s or not SAFE_NAME_RE.match(s) or s in (".", ".."):
+        die(f"{what}不合法：{name!r}（不能含 / \\ : * ? \" < > |，不能是 . 或 ..）")
+    return s
+
+
 def season_dir(project, season):
-    return PROJECTS_ROOT / project / f"第{season:02d}季"
+    if not isinstance(season, int) or not (1 <= season <= 99):
+        die(f"--season 必须是 1–99 的整数，实际是 {season}")
+    return PROJECTS_ROOT / safe_name(project) / f"第{season:02d}季"
 
 
 def resolve_voice(voice_name, characters, speaker, voices):
@@ -148,7 +165,11 @@ def say_synthesize(text, preset, out_path):
     with tempfile.NamedTemporaryFile(suffix=".aiff", delete=False) as f:
         tmp = Path(f.name)
     try:
-        r = subprocess.run(["say", "-v", voice, "-o", str(tmp), text], capture_output=True, text=True)
+        # 台词走 stdin：避免以 "-f" 之类开头时被 say 当成选项去读本地文件
+        r = subprocess.run(
+            ["say", "-v", voice, "-o", str(tmp)],
+            input=text, text=True, capture_output=True,
+        )
         if r.returncode != 0:
             raise RuntimeError(f"say 失败：{r.stderr.strip()}")
         r = subprocess.run(
@@ -235,6 +256,68 @@ def run_say(lines, out_dir, overwrite=False):
         say_synthesize(item["text"], item["preset"], out)
 
 
+def resolve_clone_ref(preset):
+    """返回 (可用参考音频路径 | None, voices.json 里写的原始相对路径)。
+
+    cloneRef 来自 voices.json，不能让它指到仓库外（绝对路径或 ../../）。
+    """
+    ref = str(preset.get("cloneRef", "") or "").strip()
+    if not ref:
+        return None, ""
+    if os.path.isabs(ref):
+        print(f"  ! cloneRef 不能用绝对路径，已忽略：{ref}", file=sys.stderr)
+        return None, ref
+    p = (SKILL_ROOT / ref).resolve()
+    try:
+        p.relative_to(SKILL_ROOT.resolve())
+    except ValueError:
+        print(f"  ! cloneRef 越界（跑出 skill 目录），已忽略：{ref}", file=sys.stderr)
+        return None, ref
+    return (p if p.is_file() else None), ref
+
+
+def is_unverified_ref(path):
+    """抖音参考目录下的音频视为「未登记授权」。"""
+    try:
+        path.resolve().relative_to(UNVERIFIED_REF_ROOT.resolve())
+    except (ValueError, OSError):
+        return False
+    return True
+
+
+def gate_clone(lines, consent, allow_unverified):
+    """clone 引擎的前置闸门：没有授权确认就不合成，未登记授权的参考默认拒绝。"""
+    if not consent:
+        die(
+            "clone 引擎需要先确认声音授权：\n"
+            "  1) 确认参考音频的声音权利人已书面同意用于本片（自录 / 采购 / 数据集授权均可）；\n"
+            "  2) 确认后加 --clone-consent 重跑。\n"
+            "  没授权就用 --engine edge；不要克隆可识别的真人声音。"
+        )
+
+    unverified = {}
+    for item in lines:
+        path, raw = resolve_clone_ref(item["preset"])
+        if path and is_unverified_ref(path):
+            unverified.setdefault(raw, []).append(item["voice"])
+
+    if not unverified:
+        return
+
+    print("⚠ 以下音色用的是未登记授权的抖音参考音频：", file=sys.stderr)
+    for raw, voices in unverified.items():
+        names = "、".join(sorted(set(voices)))
+        print(f"    {raw}  ← {names}", file=sys.stderr)
+    print("  这类参考只适合内部听感测试，对外发布前必须换成有授权的参考音频。", file=sys.stderr)
+
+    if not allow_unverified:
+        die(
+            "已拦截：未登记授权的参考音频不允许用于克隆合成。\n"
+            "  换成有授权的参考音频，或在确认仅做内部测试时加 --allow-unverified。"
+        )
+    print("  ! 已加 --allow-unverified，继续合成；产物不得对外发布。", file=sys.stderr)
+
+
 def run_clone(lines, out_dir, alpha, overwrite=False, dry_run=False):
     if not MAKE_EMOTION.is_file():
         die(f"找不到 IndexTTS 入口：{MAKE_EMOTION}")
@@ -250,9 +333,9 @@ def run_clone(lines, out_dir, alpha, overwrite=False, dry_run=False):
             ref = item["preset"].get("cloneRef", "")
             ref_path = ""
             if ref:
-                p = (SKILL_ROOT / ref).resolve()
-                if p.is_file():
-                    ref_path = str(p)
+                resolved, _ = resolve_clone_ref(item["preset"])
+                if resolved:
+                    ref_path = str(resolved)
             if not ref_path and DEFAULT_CLONE.is_file():
                 ref_path = str(DEFAULT_CLONE)
             w.writerow([
@@ -305,6 +388,16 @@ def main():
     ap.add_argument("--only", help="只跑指定序号，逗号分隔，如 3,7,9")
     ap.add_argument("--force", action="store_true", help="覆盖已存在的音频")
     ap.add_argument("--dry-run", action="store_true", help="只打印计划，不合成")
+    ap.add_argument(
+        "--clone-consent",
+        action="store_true",
+        help="确认已获得参考音频声音权利人的授权（clone 引擎必需）",
+    )
+    ap.add_argument(
+        "--allow-unverified",
+        action="store_true",
+        help="允许使用未登记授权的参考音频（抖音参考），仅限内部测试，产物不得发布",
+    )
     args = ap.parse_args()
 
     sd = season_dir(args.project, args.season)
@@ -324,7 +417,18 @@ def main():
         if not lines:
             die(f"--only {args.only} 没匹配到任何一行")
 
+    # clone 是唯一有授权风险的引擎，闸门放在建目录之前
+    if args.engine == "clone":
+        sys.stdout.flush()
+        gate_clone(lines, args.clone_consent, args.allow_unverified)
+
     out_dir = Path(args.outdir) if args.outdir else sd / "02-配音" / f"第{args.episode:02d}集"
+    out_dir = out_dir.resolve()
+    # 配音表里的 audio 字段是相对季目录写的，outdir 跑到季目录外会算不出相对路径
+    try:
+        out_dir.relative_to(sd.resolve())
+    except ValueError:
+        die(f"--outdir 必须在季目录内：{sd}\n  实际给了：{out_dir}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f">> 项目：{args.project} · 第{args.season:02d}季 · 第{args.episode:02d}集")
@@ -364,6 +468,24 @@ def main():
         else:
             duration = probe_duration_ms(mp3)
         total_ms += duration
+
+        if args.engine != "clone":
+            license_tag, license_note = "ok", ""
+        else:
+            ref_path, raw_ref = resolve_clone_ref(item["preset"])
+            if raw_ref and ref_path and is_unverified_ref(ref_path):
+                license_tag = "unverified"
+                license_note = "抖音参考未登记授权，对外发布前必须替换"
+            elif raw_ref and ref_path:
+                license_tag = "user-provided"
+                license_note = "参考音频由使用者提供，发布前需自行确认授权"
+            elif raw_ref:
+                license_tag = "dataset"
+                license_note = f"参考音频不存在（{raw_ref}），回落 aishell3 公开数据集音色"
+            else:
+                license_tag = "dataset"
+                license_note = "未指定参考音频，回落 aishell3 公开数据集音色"
+
         manifest_lines.append({
             "seq": item["seq"],
             "speaker": item["speaker"],
@@ -377,8 +499,8 @@ def main():
             "audio": str((out_dir / f"S{item['seq']:03d}.mp3").relative_to(sd)),
             "duration": duration,
             "hash": item["hash"],
-            "license": "unverified" if args.engine == "clone" and item["preset"].get("cloneRef") else "ok",
-            "licenseNote": "抖音参考未登记授权，对外发布前必须替换" if args.engine == "clone" and item["preset"].get("cloneRef") else "",
+            "license": license_tag,
+            "licenseNote": license_note,
         })
 
     manifest = {

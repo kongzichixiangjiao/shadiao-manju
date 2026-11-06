@@ -14,10 +14,29 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -n "$NAME" ] || { echo "用法：bash new_project.sh <剧名> [--season 1]" >&2; exit 2; }
-SEASON_PAD="$(printf '%02d' "$SEASON")"
-BASE="$ROOT/99-项目/$NAME"
+[ -n "${NAME}" ] || { echo "用法：bash new_project.sh <剧名> [--season 1]" >&2; exit 2; }
+
+# 剧名会拼进路径：不许带分隔符、不许 . / ..，也不许控制字符
+case "${NAME}" in
+  .|..|.*|*/*|*\\*|*[[:cntrl:]]*)
+    echo "✗ 剧名不合法：${NAME}（不能以 . 开头，不能含 / 或 \\）" >&2; exit 2 ;;
+esac
+[ "${#NAME}" -le 64 ] || { echo "✗ 剧名太长（上限 64 字）：${NAME}" >&2; exit 2; }
+
+case "${SEASON}" in
+  ''|*[!0-9]*) echo "✗ --season 必须是数字：${SEASON}" >&2; exit 2 ;;
+esac
+[ "${SEASON}" -ge 1 ] && [ "${SEASON}" -le 99 ] || { echo "✗ --season 必须在 1–99：${SEASON}" >&2; exit 2; }
+
+SEASON_PAD="$(printf '%02d' "${SEASON}")"
+BASE="$ROOT/99-项目/${NAME}"
 SEASON_DIR="$BASE/第${SEASON_PAD}季"
+
+# 双保险：解析后的路径必须仍在 99-项目 下
+case "$SEASON_DIR" in
+  "$ROOT/99-项目/"*) ;;
+  *) echo "✗ 路径越界：$SEASON_DIR" >&2; exit 2 ;;
+esac
 
 mkdir -p "$SEASON_DIR"/{00-立项,01-剧本,02-配音,03-素材/{角色,背景,道具,封面},04-工程,05-成片,06-质检}
 

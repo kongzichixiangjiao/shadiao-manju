@@ -74,6 +74,7 @@ install_app() {
   npm install
 
   if [ ! -f .env.local ] && [ -f .env.example ]; then
+    # 只复制模板文件给 app 用：不读取内容、不上传、不写日志
     cp .env.example .env.local
     info "已生成 .env.local（如需 TTS Provider，按需修改）"
   fi

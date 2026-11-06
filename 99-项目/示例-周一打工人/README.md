@@ -32,7 +32,7 @@
 ## 跑一遍
 
 ```bash
-# 1) 合成配音（edge，秒级）
+# 1) 合成配音（edge，秒级；台词会发到微软在线服务，私密内容改用 --engine say）
 python3 02-配音/shadiao-voice-skill/scripts/tts_batch.py \
   --project 示例-周一打工人 --season 1 --episode 1 --engine edge
 

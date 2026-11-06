@@ -1,24 +1,36 @@
 #!/usr/bin/env bash
 # 提交并推送到 GitHub。
 #
+# 只给仓库维护者用，不属于创作工作流。默认只提交到本地，不会联网。
+#
 # 用法：
-#   bash update_github.sh "改了什么"
-#   GITHUB_REPO=git@github.com:you/your-repo.git bash update_github.sh
+#   bash update_github.sh "改了什么"                       # 只提交到本地
+#   bash update_github.sh "改了什么" --yes                  # 提交并推送（需已配 origin）
+#   GITHUB_REPO=git@github.com:you/your-repo.git \
+#     bash update_github.sh "改了什么" --yes                # 首次：自动 git init 并添加 origin
 #
-# 首次运行会自动 git init 并添加 origin。推之前先确认仓库已创建：
-#   https://github.com/new?name=shadiao-manju
-#
-# 提交前会做两道检查：
-#   1. .env 不许进版本库
+# 推送前会做三道检查：
+#   1. .env / .env.* 不许进版本库（.env.example 除外）
 #   2. 暂存内容里不许出现常见密钥格式
+#   3. 单文件超过 50MB 拒收
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$REPO_DIR"
 
-REMOTE="${GITHUB_REPO:-git@github.com:kongzichixiangjiao/shadiao-manju.git}"
 STAMP="$(date '+%Y-%m-%d %H:%M')"
-MSG="${1:-update: 常规更新 ($STAMP)}"
+PUSH=0
+MSG=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --yes) PUSH=1; shift ;;
+    -h|--help) awk 'NR>1 && /^#/ {sub(/^# ?/,""); print; next} NR>1 {exit}' "$0"; exit 0 ;;
+    -*) echo "未知参数：$1" >&2; exit 2 ;;
+    *) MSG="$1"; shift ;;
+  esac
+done
+MSG="${MSG:-update: 常规更新 ($STAMP)}"
 
 command -v git >/dev/null 2>&1 || { echo "✗ 缺少 git" >&2; exit 1; }
 
@@ -29,10 +41,14 @@ if [ ! -d .git ]; then
 fi
 
 if ! git remote get-url origin >/dev/null 2>&1; then
-  git remote add origin "$REMOTE"
-  echo "已添加 origin：$REMOTE"
-  if ! git ls-remote --exit-code origin >/dev/null 2>&1; then
-    echo "提醒：远程仓库还不可用。先去 https://github.com/new?name=shadiao-manju 建一个空仓库。"
+  if [ -n "${GITHUB_REPO:-}" ]; then
+    git remote add origin "$GITHUB_REPO"
+    echo "已添加 origin：$GITHUB_REPO"
+  elif [ "$PUSH" = "1" ]; then
+    echo "✗ 没有 origin，也没给 GITHUB_REPO。先设 GITHUB_REPO=<仓库地址>，或先去 GitHub 建空仓库。" >&2
+    exit 1
+  else
+    echo "提醒：未配置 origin，本次只提交到本地。"
   fi
 fi
 
@@ -43,9 +59,12 @@ if [ -z "$(git status --porcelain)" ]; then
   exit 0
 fi
 
-# ── 1. .env 闸门 ──────────────────────────────────────────
-if git diff --cached --name-only | grep -qE '(^|/)\.env$'; then
-  echo "✗ .env 被加入了暂存区，已中止。先执行：git restore --staged .env" >&2
+# ── 1. 配置/密钥文件闸门 ──────────────────────────────────
+LEAKED="$(git diff --cached --name-only | grep -E '(^|/)\.env(\..+)?$' | grep -vE '(^|/)\.env\.example$' || true)"
+if [ -n "$LEAKED" ]; then
+  echo "✗ 以下配置/密钥文件被加入了暂存区，已中止：" >&2
+  echo "$LEAKED" >&2
+  echo "先执行：git restore --staged <文件>" >&2
   exit 1
 fi
 
@@ -71,11 +90,19 @@ if big:
     sys.exit(1)
 PY
 
-# ── 4. 提交 + 推送 ────────────────────────────────────────
+# ── 4. 提交 ───────────────────────────────────────────────
 echo "── 本次变更 ──"
 git status --short
 
 git commit -m "$MSG"
-git push -u origin HEAD
+echo "✓ 已提交：$(git rev-parse --short HEAD)"
 
+# ── 5. 推送（必须显式 --yes）──────────────────────────────
+if [ "$PUSH" != "1" ]; then
+  echo "未推送。确认无误后加 --yes 再跑一次："
+  echo "  bash update_github.sh \"$MSG\" --yes"
+  exit 0
+fi
+
+git push -u origin HEAD
 echo "── 完成：$(git remote get-url origin) ($(git rev-parse --short HEAD)) ──"

@@ -141,7 +141,7 @@ python3 05-出片/shadiao-export-skill/scripts/mix_audio.py \
 | 症状 | 原因 | 处理 |
 |---|---|---|
 | 打开文件夹提示「未找到 .anime」 | 选错了目录 | 选 `04-工程`，不是 `99-项目` |
-| 预览没声音 | 音频没在 `_cache/tts/` | 重跑 04 的 `build_anime.mjs` |
+| 预览没声音 | 音频没在 `_cache/tts/` | 重跑 `04-工程/shadiao-anime-skill/scripts/build_anime.mjs` |
 | 导出卡住 | 浏览器内存不足 | 关掉其他标签页；降低分辨率到 720×1280 再试 |
 | 导出文件很大 | 默认码率高 | 跑 `postprocess.sh --crf 23` |
 | 导出只有 1920×1080 横屏 | 没打竖屏补丁 | `bash 00-工作台/patch_vertical.sh apply` 后重启 |

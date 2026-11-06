@@ -26,6 +26,7 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 from openai import OpenAI
 
@@ -59,6 +60,59 @@ def find_key():
 def to_data_url(path):
     with open(path, "rb") as fh:
         return "data:image/png;base64," + base64.b64encode(fh.read()).decode()
+
+
+# 只从已知的图片 CDN 下载：返回的 URL 由远端控制，不能盲开
+ALLOWED_DOWNLOAD_HOSTS = ("volces.com", "byteimg.com", "bytedance.com")
+
+
+def allowed_hosts():
+    extra = os.environ.get("SHADIAO_DOWNLOAD_HOSTS", "")
+    return ALLOWED_DOWNLOAD_HOSTS + tuple(
+        h.strip().lower() for h in extra.split(",") if h.strip()
+    )
+
+
+def validate_download_url(url):
+    """校验远端返回的下载地址：必须 https，且在 CDN 白名单内。"""
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise SystemExit(f"✗ 下载地址必须是 https，实际是「{parsed.scheme or '空'}」：{url[:120]}")
+    host = (parsed.hostname or "").lower()
+    if not any(host == h or host.endswith("." + h) for h in allowed_hosts()):
+        raise SystemExit(
+            f"✗ 下载地址不在白名单：{host or '<空>'}。\n"
+            "  如果确认是可信 CDN，用 SHADIAO_DOWNLOAD_HOSTS=example.com 追加。"
+        )
+    return url
+
+
+class _StrictRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """让每一跳 30x 都重新过白名单。
+
+    urlopen 默认会自动跟随重定向，且不会重新校验新地址；
+    白名单里的 CDN 一旦被控制或配错，就能把下载带到内网或明文地址。
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        validate_download_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_OPENER = urllib.request.build_opener(_StrictRedirectHandler)
+
+
+def download(url, timeout=300):
+    target = validate_download_url(url)
+    try:
+        with _OPENER.open(target, timeout=timeout) as resp:  # noqa: S310
+            # 兜底：某些实现可能绕过 handler，落盘前再确认一次最终地址
+            validate_download_url(resp.geturl())
+            return resp.read()
+    except SystemExit:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise SystemExit(f"✗ 下载图片失败（{target[:120]}）：{str(e)[:160]}")
 
 
 def cover_crop(img_path, out_path, w, h):
@@ -118,7 +172,7 @@ def main():
         )
 
     url = r.data[0].url
-    raw = urllib.request.urlopen(url, timeout=300).read()
+    raw = download(url)
 
     out = args.out
     os.makedirs(os.path.dirname(os.path.abspath(out)) or ".", exist_ok=True)

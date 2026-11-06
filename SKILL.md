@@ -1,6 +1,6 @@
 ---
 name: shadiao-manju
-version: 1.0.0
+version: 1.0.2
 display_name: 沙雕漫剧
 display_name_en: Shadiao Manju
 description: >
@@ -163,13 +163,14 @@ bash 00-工作台/patch_vertical.sh apply # 9:16 竖屏补丁（导出 1080×192
 python3 01-剧本/shadiao-script-skill/scripts/validate_script.py \
   99-项目/<剧名>/第01季/01-剧本/第01集.md
 
-# 2) 配音（草稿，秒级）
+# 2) 配音（草稿，秒级；台词会发到微软在线服务，未公开剧本改用 --engine say）
 python3 02-配音/shadiao-voice-skill/scripts/tts_batch.py \
   --project <剧名> --season 1 --episode 1 --engine edge
 
 # 2b) 配音（成品，IndexTTS，批量过夜）
+#     必须先确认已获得声音权利人授权，否则改用 --engine edge
 python3 02-配音/shadiao-voice-skill/scripts/tts_batch.py \
-  --project <剧名> --season 1 --episode 1 --engine clone --alpha 0.6
+  --project <剧名> --season 1 --episode 1 --engine clone --alpha 0.6 --clone-consent
 
 # 3) 生成 .anime 工程
 node 04-工程/shadiao-anime-skill/scripts/build_anime.mjs \
@@ -217,7 +218,7 @@ python3 05-出片/shadiao-export-skill/scripts/add_endcard.py \
 3. **一角色一音色**：全剧不换；同一张音色卡 / 同一条参考音频。
 4. **版本锁定**：`lock.json` 记录 app commit 与 schema 版本；升级后必须重跑 04 校验。
 5. **导出人工**：app 没有 CLI，最后一步只能人工点；skill 负责把「打开即可导出」准备好。
-6. **合规闸门**：声音不克隆可识别真人；素材不盗用；对外发布标 AI 生成。细则见 `02-配音/.../声音合规.md`。
+6. **合规闸门**：声音不克隆可识别真人（`clone` 引擎需 `--clone-consent`，抖音参考默认拦截）；素材不盗用；对外发布标 AI 生成。细则见 `02-配音/.../声音合规.md`。
 
 ---
 
@@ -244,10 +245,10 @@ python3 05-出片/shadiao-export-skill/scripts/add_endcard.py \
 - `.anime` 没有入库，按 04 的命令现场生成
 
 ```bash
-# 校验剧本
+# 校验剧本（JSON 必须是同一集，别拿剧本.json 去对第01集）
 python3 01-剧本/shadiao-script-skill/scripts/validate_script.py \
   99-项目/示例-周一打工人/第01季/01-剧本/第01集.md \
-  --json 99-项目/示例-周一打工人/第01季/01-剧本/剧本.json
+  --json 99-项目/示例-周一打工人/第01季/01-剧本/第01集.json
 
 # 生成并校验工程
 node 04-工程/shadiao-anime-skill/scripts/build_anime.mjs \
@@ -262,8 +263,41 @@ node 04-工程/shadiao-anime-skill/scripts/validate_anime.mjs \
 |---|---|---|
 | app 打不开项目文件夹 | 用了 Safari / Firefox | 换 Chrome / Edge（依赖 File System Access API） |
 | 导出是横屏 1920×1080 | 没打 9:16 补丁 | `bash 00-工作台/patch_vertical.sh apply` 后重启 dev server |
-| 导出的片子没声音 | `audioPath` 指错 / 音频没拷进 `<剧名>_cache/tts/` | 重跑 04 的 `build_anime.mjs`，它会统一拷贝 |
-| 字幕和声音不同步 | `duration` 缺失或不是毫秒 | 跑 `validate_anime.mjs`，按报告补 |
+| 导出的片子没声音 | `audioPath` 指错 / 音频没拷进 `<剧名>_cache/tts/` | 重跑 `04-工程/shadiao-anime-skill/scripts/build_anime.mjs`，它会统一拷贝 |
+| 字幕和声音不同步 | `duration` 缺失或不是毫秒 | 跑 `04-工程/shadiao-anime-skill/scripts/validate_anime.mjs`，按报告补 |
 | 角色不显示 | 素材索引里的相对路径和工程不一致 | 检查 `03-素材/素材索引.json` 与 `.anime` 里的 `refId` / `url` |
 | edge-tts 403 | 版本过旧 | `pip install -U edge-tts` |
 | IndexTTS 太慢 | M1 非实时（RTF 3–4） | 草稿用 edge，成品挂后台过夜 |
+| clone 引擎报「缺少授权确认」 | 没给 `--clone-consent` | 确认已获声音权利人授权后加上；未授权就用 `--engine edge` |
+
+---
+
+## 十、安全与数据边界
+
+这一节写清楚「哪些数据会离开本机」，装之前先看一眼。
+
+| 动作 | 数据去哪 | 说明 |
+|---|---|---|
+| `--engine edge`（edge-tts） | **台词文本发到微软在线语音服务** | 要联网。未公开剧本 / 客户稿件 / 含真实姓名电话的内容，先确认能否外发；不能就换 `--engine say`（macOS 本地）或 `--engine clone`（本地 IndexTTS） |
+| `gen_seedream.py` 生图 | prompt + 参考图 base64 发到火山方舟 | 需要 `ARK_API_KEY` |
+| 无头 Chrome 导出 | 只访问 `localhost:5173` | 页面只加载本机 dev server；不要把它改成外网地址 |
+| `--engine say` / `--engine clone` | 不出本机 | 断网可用 |
+
+**密钥**：脚本只从 `$ARK_API_KEY` 或本地 `.env` 读取（`.env` 已在 `.gitignore`，不进版本库），不读 `~/.ssh`、`~/.aws`、浏览器配置等任何其他凭证。仓库里不含密钥。`setup_app.sh` 里的 `cp .env.example .env.local` 只是**复制模板文件**给 app 用，不读内容、不上传。
+
+**本地文件**：`build_anime.mjs` 里所有素材、配音、嘴位路径都经过 `safeJoin()`，剧本或配音表里写 `../../` 会被直接拒绝；`--project` 剧名和角色名也要过 `assertSafeName()`（不许含 `/`）。`tts_batch.py` 同样校验剧名，`--outdir` 只能落在季目录内，`voices.json` 的 `cloneRef` 不能是绝对路径或跑出 skill 目录。ffmpeg 的输入输出限制在 `99-项目/<剧名>/` 和系统临时目录内；示例 `render_ep.sh` 清理旧工程时只备份到 `.trash/`，不直接删。
+
+---
+
+## 十一、维护脚本（不属于创作工作流，Agent 不要执行）
+
+下面两个脚本只给**仓库维护者**用，做片流程里永远不会调用它们。默认都是「只检查、不上传」，必须显式加 `--yes` 才会真的往外部写东西。
+
+| 脚本 | 会做什么 | 默认行为 |
+|---|---|---|
+| `release.sh` | 打包当前目录并**上传到 ClawHub 技能市场**（`clawhub skill publish`） | 等同于 `--dry-run`，只打印将要执行的命令 |
+| `update_github.sh` | **提交并推送到 GitHub**（`git add -A` + `git commit` + `git push`） | 只提交到本地；不设 `GITHUB_REPO` 直接报错，加 `--yes` 才推送 |
+
+- 这两个文件已在 `.clawhubignore` 里排除，不会随 skill 分发给使用者。
+- Agent 在正常创作流程中**不得**运行它们；用户明确要求「发布 skill / 推到 GitHub」时才用，且先确认目标 slug / 仓库。
+- 推送前的护栏：`.env` 不许进暂存区、暂存内容里不许出现常见密钥格式、单文件超过 50MB 拒收。**不要用 `--no-verify` 或 `git add -f` 绕过。**

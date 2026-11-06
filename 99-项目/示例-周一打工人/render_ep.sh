@@ -6,6 +6,10 @@ set -e
 EP="$1"
 LINE2="${2:-如有雷同，纯属巧合}"
 
+case "${EP:-}" in
+  ''|*[!0-9]*) echo "✗ 集号必须是数字：${EP:-<空>}" >&2; exit 1 ;;
+esac
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILL="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SEASON="$SCRIPT_DIR/第01季"
@@ -30,8 +34,20 @@ python3 01-剧本/shadiao-script-skill/scripts/validate_script.py \
 python3 02-配音/shadiao-voice-skill/scripts/tts_batch.py \
   --project 示例-周一打工人 --season 1 --episode "$EP" --engine edge --rate-boost +35% --force | tail -2
 
-# 4) 工程
-rm -rf "$SEASON/04-工程" && mkdir -p "$SEASON/04-工程" "$APP/public/spike-project"
+# 4) 工程：旧工程先备份再重建，不直接删（避免误删其它集的手工修改）
+[ -d "$SEASON" ] || { echo "✗ 季目录不存在：$SEASON" >&2; exit 1; }
+case "$SEASON" in
+  */99-项目/*) ;;
+  *) echo "✗ 季目录不在 99-项目 下，拒绝清理：$SEASON" >&2; exit 1 ;;
+esac
+
+if [ -d "$SEASON/04-工程" ]; then
+  TRASH="$SEASON/.trash/04-工程-$(date '+%Y%m%d-%H%M%S')"
+  mkdir -p "$(dirname "$TRASH")"
+  mv "$SEASON/04-工程" "$TRASH"
+  echo "  旧工程已备份到 ${TRASH#$SEASON/}"
+fi
+mkdir -p "$SEASON/04-工程" "$APP/public/spike-project"
 cd "$SKILL"
 node 04-工程/shadiao-anime-skill/scripts/build_anime.mjs \
   --project 示例-周一打工人 --season 1 --episode "$EP" \
@@ -64,9 +80,12 @@ print(f"  素材 {len(paths)} 个")
 PY
 
 # 5) 无头导出
+#    页面只加载本机 localhost:5173 的 dev server，不访问外网；
+#    不要把下面的 URL 换成外部地址。容器/CI 里若报 sandbox 权限错误，再自行补参数。
 rm -f "$TMP/export.mp4"
+rm -rf -- "$TMP/chrome-ep${EP}"
 "$CHROME" \
-  --headless=new --no-sandbox --disable-gpu --enable-unsafe-swiftshader \
+  --headless=new --disable-gpu --enable-unsafe-swiftshader \
   --autoplay-policy=no-user-gesture-required \
   --user-data-dir="$TMP/chrome-ep${EP}" \
   http://localhost:5173/export.html > /dev/null 2>&1 &

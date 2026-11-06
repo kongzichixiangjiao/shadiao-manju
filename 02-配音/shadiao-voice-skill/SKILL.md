@@ -42,7 +42,7 @@ description: >
 | 场景 | 引擎 | 命令 |
 |---|---|---|
 | 改稿期、当天要出片 | `edge` | `--engine edge` |
-| 定稿、要情绪和「演」 | `clone` | `--engine clone --alpha 0.6` |
+| 定稿、要情绪和「演」 | `clone` | `--engine clone --alpha 0.6 --clone-consent` |
 | 断网 / edge 挂 | `say` | `--engine say` |
 
 **推荐节奏**：edge 出草稿 → 改到满意 → clone 过夜出成品 → 第二天直接进 04。
@@ -50,12 +50,22 @@ description: >
 > `clone` 需要本地装好 IndexTTS 工具链，并设 `SHADIAO_TOOLCHAIN` 指到工具链根目录。
 > 本仓库不含模型、参考音频和引擎；只用 edge 不影响其余流程。
 
+**clone 的两道闸门**（脚本强制执行，不是口头约定）：
+
+1. `--clone-consent`：声明已获得参考音频声音权利人的授权。不加就直接报错退出，不会合成。
+2. `--allow-unverified`：`voices.json` 里指向 `10-音色制作/抖音/` 的参考音频属于「未登记授权」，默认被拦截；
+   只在内部听感测试时加这个参数，产物不得对外发布，`配音表.json` 会把它标成 `license: unverified`。
+
 ### 3. 跑批量
 
 ```bash
 python3 02-配音/shadiao-voice-skill/scripts/tts_batch.py \
   --project <剧名> --season 1 --episode 1 --engine edge
 ```
+
+> ⚠️ **数据边界**：`edge` 引擎调用 edge-tts，会把每一句台词文本发到微软在线语音服务（所以它要联网）。
+> 未公开剧本、客户稿件、带真实姓名/电话的内容，先跟剧方确认能不能外发；不能就用 `--engine say`（macOS 本地）
+> 或 `--engine clone`（本地 IndexTTS，模型完全跑在本机）。
 
 - 默认读 `99-项目/<剧名>/第NN季/01-剧本/剧本.json`
 - 产物落在 `99-项目/<剧名>/第NN季/02-配音/第NN集/`
@@ -120,7 +130,7 @@ python3 02-配音/shadiao-voice-skill/scripts/tts_batch.py \
 - [ ] 配音总时长在目标 ±20% 内
 - [ ] 没有一句超过 8 秒（超了就拆台词）
 - [ ] 听感：同一角色跨句音色一致
-- [ ] 合规：没有克隆可识别真人；抖音参考只做听感
+- [ ] 合规：没有克隆可识别真人；抖音参考只做听感，正式成品已换成有授权的参考音频
 
 ## 五、故障
 

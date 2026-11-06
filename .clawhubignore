@@ -5,3 +5,8 @@
 99-项目/**/02-配音/**/_wav/**
 99-项目/**/03-素材/BGM/*.wav
 99-项目/**/03-素材/音效/*.wav
+99-项目/**/.trash/
+
+# 仓库维护脚本：会往 ClawHub / GitHub 上传东西，不随 skill 分发
+release.sh
+update_github.sh

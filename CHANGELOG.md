@@ -1,5 +1,36 @@
 # 更新记录
 
+## 1.0.2 — 2026-11-06
+
+按扫描报告收口：修真实风险，其余在文档里写明边界。
+
+- `gen_seedream.py`：下载图片时对**每一跳** 30x 重定向重新做 https + CDN 白名单校验，并在落盘前复查最终地址
+- `tts_batch.py`：`say` 引擎改走 stdin 传台词，台词以 `-f` 等开头时不会再被当成选项去读本地文件
+- `validate_script.py`：MD ↔ JSON 一致性检查从「只比行数/角色/场景」升级为**逐行比对台词文本**，对不上会报出来
+- SKILL.md 新增「安全与数据边界」：edge-tts 会把台词发到微软在线服务、生图会发到火山方舟、无头 Chrome 只访问 localhost、密钥只从环境变量/本地 `.env` 读
+- `音频优先.md` / `02-配音/SKILL.md` / `音色映射.md` 三处补 edge-tts 外发提示，未公开剧本改用 `--engine say` / `clone`
+- 修正 SKILL.md 示例：校验第01集时误拿整季 `剧本.json` 当配套 JSON，现改为 `第01集.json`
+- 故障排查表里 `build_anime.mjs` / `validate_anime.mjs` 补全相对路径
+- `render_ep.sh`：临时目录清理加 `--` 终止符，去掉 `--no-sandbox`（脚本本来就是 macOS 专用，页面只连本机 dev server）
+- 新增 `safeJoin()` / `assertSafeName()`：`build_anime.mjs` 里所有素材、配音路径和角色目录都限制在季目录内，剧本/配音表里写 `../../` 会被直接拒绝；`--season` / `--episode` 必须是 1–99 的整数
+- `new_project.sh`：剧名校验（不能含 `/`、不能以 `.` 开头、不超过 64 字），并二次确认最终路径仍在 `99-项目/` 下
+- `burn_subtitles.py`：`--font` 之前根本没生效（写死在 ASS 里），现已真正接上；ASS 文件路径和字体名做 filtergraph 转义；台词里的换行会压平，避免截断字幕行
+- `add_endcard.py`：结尾卡文案改走 `textfile=` + `expansion=none`，含冒号、引号、百分号、花括号都不会再让 ffmpeg 解析失败；补 fps/时长/crf 校验
+- `tts_batch.py`：`--project` 剧名校验（防 `../../`）、`--season` 限 1–99；`--outdir` 必须在季目录内（之前指到外面会在写 `配音表.json` 时崩）；`voices.json` 的 `cloneRef` 不许绝对路径或跑出 skill 目录
+- 其余脚本复核：没有 `eval` / `exec` / `shell=True` / 网络请求，`mix_audio.py` 的音效名走固定映射表
+
+## 1.0.1 — 2026-11-06
+
+安全与合规加固，不改变创作流程。
+
+- clone 引擎加硬闸门：必须 `--clone-consent`；`10-音色制作/抖音/` 下的参考音频默认拦截，需 `--allow-unverified` 才放行，警告提前到合成之前
+- `配音表.json` 的 `license` 细分为 `unverified` / `user-provided` / `dataset`
+- `release.sh` 默认改为 dry-run，加 `--yes` 才上传；`update_github.sh` 默认只本地提交，必须显式给 `GITHUB_REPO` 并加 `--yes` 才推送
+- 两个维护脚本从发布包中排除，并在 SKILL.md / README 里明确声明「不属于创作工作流」
+- `gen_seedream.py` 下载远端返回图片前校验协议与 CDN 白名单
+- `render_ep.sh` 不再 `rm -rf` 整季工程目录，改为备份到 `.trash/`；集号加数字校验
+- 推送到 GitHub 前的闸门扩展到 `.env.*`（保留 `.env.example`）
+
 ## 1.0.0 — 2026-11-06
 
 首个公开版本。

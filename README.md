@@ -84,9 +84,14 @@ cp .env.example .env
 ```
 
 - `.env` 已在 `.gitignore` 中，不会被提交
+- 脚本读 `.env` 只为取本机的 `ARK_API_KEY`，不会上传或外发；生图请求只发往火山方舟 API
+- **edge-tts 会把台词文本发到微软在线语音服务**（它需要联网）；不能外发的剧本用 `--engine say`（macOS 本地）或 `--engine clone`（本地 IndexTTS）
 - `ARK_API_KEY` 是可选项：不填就跳过 AI 生图，自己准备素材
 - IndexTTS 克隆引擎需要额外工具链，用 `SHADIAO_TOOLCHAIN` 指过去；不用就留空，草稿音走 edge-tts
+- 克隆有硬闸门：`--engine clone` 必须加 `--clone-consent` 声明已获授权；`10-音色制作/抖音/` 下的参考音频默认被拦截
 - 声音不克隆可识别真人；素材不盗用；对外发布标 AI 生成
+
+> `release.sh` / `update_github.sh` 是仓库维护者脚本（分别上传 ClawHub、推送 GitHub），默认只做检查，加 `--yes` 才真的写外部。它们不在发布包里，也不属于创作流程，agent 不应自动执行。
 
 ## 目录
 
