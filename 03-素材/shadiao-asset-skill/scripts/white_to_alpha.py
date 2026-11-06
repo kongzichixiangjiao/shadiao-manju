@@ -126,7 +126,12 @@ def fill_enclosed_white(img, threshold):
 
 def process(path, threshold, do_trim, do_soften, fill_holes=False, backup=True):
     path = Path(path)
-    original = path.read_bytes()          # 先留底，处理失败也不会丢原图
+    # 先把原图落到备份文件，再动原图：中途崩了也不会只剩处理到一半的图
+    if backup:
+        bak = path.with_name(path.stem + ".orig" + path.suffix)
+        if not bak.exists():
+            bak.write_bytes(path.read_bytes())
+            print(f"  · 原图已备份：{bak.name}")
     img = Image.open(path).convert("RGBA")
     flood_white(img, threshold)
     if fill_holes:
@@ -136,11 +141,6 @@ def process(path, threshold, do_trim, do_soften, fill_holes=False, backup=True):
     if do_trim:
         img = trim(img)
     img.save(path, "PNG", optimize=True)
-    if backup:
-        bak = path.with_name(path.stem + ".orig" + path.suffix)
-        if not bak.exists():
-            bak.write_bytes(original)
-            print(f"  · 原图已备份：{bak.name}")
     return img.size
 
 

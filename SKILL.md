@@ -1,6 +1,6 @@
 ---
 name: shadiao-manju
-version: 1.0.4
+version: 1.0.5
 display_name: 沙雕漫剧
 display_name_en: Shadiao Manju
 description: >

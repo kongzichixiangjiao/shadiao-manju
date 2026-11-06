@@ -230,7 +230,7 @@ if (args.report) {
     '# 工程校验报告',
     '',
     `- 工程：\`${animePath}\``,
-    `- 时间：${new Date().toLocaleString('zh-CN')}`,
+    `- 时间：${new Date().toLocaleString()}`,
     `- 结果：${passed ? '通过' : '不通过'}`,
     `- 错误：${errors.length} / 警告：${warnings.length}`,
     '',

@@ -25,25 +25,24 @@ import tempfile
 
 
 def run(cmd):
-    p = subprocess.run(cmd, capture_output=True)
+    """跑外部命令的唯一入口：列表传参、不经过 shell。"""
+    p = subprocess.run(list(cmd), capture_output=True)
     if p.returncode != 0:
         sys.stderr.write(p.stderr.decode("utf-8", "ignore")[-3000:])
-        raise SystemExit(f"ffmpeg 失败：{' '.join(cmd[:6])}…")
+        raise SystemExit(f"外部命令失败：{' '.join(cmd[:6])}…")
+    return p
 
 
 def probe(path):
     """返回 (width, height, fps, duration)"""
-    out = subprocess.run(
-        [
-            "ffprobe", "-v", "error",
-            "-select_streams", "v:0",
-            "-show_entries", "stream=width,height,r_frame_rate",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1",
-            path,
-        ],
-        capture_output=True, text=True,
-    ).stdout
+    out = run([
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,r_frame_rate",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1",
+        path,
+    ]).stdout.decode("utf-8", "ignore")
     kv = dict(
         line.split("=", 1) for line in out.strip().splitlines() if "=" in line
     )

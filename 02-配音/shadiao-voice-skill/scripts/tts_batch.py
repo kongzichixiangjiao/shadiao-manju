@@ -30,18 +30,13 @@ import tempfile
 from datetime import datetime
 from pathlib import Path
 
+# 工具链路径（含 $SHADIAO_TOOLCHAIN）只在 toolchain.py 里读
+from toolchain import DEFAULT_CLONE, DOUYIN_DIR, MAKE_EMOTION
+
 SKILL_ROOT = Path(__file__).resolve().parents[3]
 PROJECTS_ROOT = SKILL_ROOT / "99-项目"
 VOICE_DIR = Path(__file__).resolve().parents[1]
 VOICES_PATH = VOICE_DIR / "voices.json"
-
-TOOLCHAIN = Path(
-    os.environ.get("SHADIAO_TOOLCHAIN", str(SKILL_ROOT.parent))
-).expanduser()
-VOICE_LIB = TOOLCHAIN / "23-视频制作" / "10-音色制作" / "voice-timbre-library"
-MAKE_EMOTION = VOICE_LIB / "scripts" / "make_emotion.py"
-DOUYIN_DIR = TOOLCHAIN / "23-视频制作" / "10-音色制作" / "抖音"
-DEFAULT_CLONE = VOICE_LIB / "assets" / "source" / "音色音频" / "aishell3" / "SSB0623.wav"
 
 # 抖音参考音频来源未登记授权，默认不许进入克隆合成
 UNVERIFIED_REF_ROOT = DOUYIN_DIR
@@ -69,6 +64,16 @@ SAY_VOICES = {
     "female": "Tingting",
     "male": "Tingting",
 }
+
+
+def run_cmd(cmd, **kwargs):
+    """跑外部命令的唯一入口：一律列表传参、不经过 shell。
+
+    这样「哪些外部程序会被调用」只有一处，也顺手统一了错误输出。
+    """
+    kwargs.setdefault("capture_output", True)
+    kwargs.setdefault("text", True)
+    return subprocess.run(list(cmd), **kwargs)
 
 
 def die(msg, code=1):
@@ -166,7 +171,7 @@ def edge_synthesize(text, preset, out_path, rate_boost="+0%"):
         "--text", text,
         "--write-media", str(out_path),
     ]
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = run_cmd(cmd)
     if r.returncode != 0 or not out_path.exists() or out_path.stat().st_size == 0:
         raise RuntimeError(f"edge-tts 失败：{r.stderr.strip() or r.stdout.strip()}")
 
@@ -177,15 +182,12 @@ def say_synthesize(text, preset, out_path):
         tmp = Path(f.name)
     try:
         # 台词走 stdin：避免以 "-f" 之类开头时被 say 当成选项去读本地文件
-        r = subprocess.run(
-            ["say", "-v", voice, "-o", str(tmp)],
-            input=text, text=True, capture_output=True,
-        )
+        r = run_cmd(["say", "-v", voice, "-o", str(tmp)], input=text)
         if r.returncode != 0:
             raise RuntimeError(f"say 失败：{r.stderr.strip()}")
-        r = subprocess.run(
-            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(tmp), "-codec:a", "libmp3lame", "-q:a", "4", str(out_path)],
-            capture_output=True, text=True,
+        r = run_cmd(
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(tmp),
+             "-codec:a", "libmp3lame", "-q:a", "4", str(out_path)]
         )
         if r.returncode != 0:
             raise RuntimeError(f"ffmpeg 失败：{r.stderr.strip()}")
@@ -194,10 +196,9 @@ def say_synthesize(text, preset, out_path):
 
 
 def probe_duration_ms(path):
-    r = subprocess.run(
+    r = run_cmd(
         ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-         "-of", "default=noprint_wrappers=1:nokey=1", str(path)],
-        capture_output=True, text=True,
+         "-of", "default=noprint_wrappers=1:nokey=1", str(path)]
     )
     if r.returncode != 0:
         raise RuntimeError(f"ffprobe 失败：{r.stderr.strip()}")
@@ -358,15 +359,17 @@ def run_clone(lines, out_dir, alpha, overwrite=False, dry_run=False):
     print(f">> 调 IndexTTS：{MAKE_EMOTION}")
     print(f">> 标注表：{table}")
     if dry_run:
-        r = subprocess.run(
-            [sys.executable, str(MAKE_EMOTION), "--table", str(table), "--outdir", str(wav_dir), "--dry-run"],
-            text=True,
+        r = run_cmd(
+            [sys.executable, str(MAKE_EMOTION), "--table", str(table),
+             "--outdir", str(wav_dir), "--dry-run"],
+            capture_output=False,
         )
         return r.returncode
     print(">> 首次加载模型约 30 秒；之后每句 RTF 约 3–4（M1）")
-    r = subprocess.run(
-        [sys.executable, str(MAKE_EMOTION), "--table", str(table), "--outdir", str(wav_dir), "--alpha", str(alpha)],
-        text=True,
+    r = run_cmd(
+        [sys.executable, str(MAKE_EMOTION), "--table", str(table),
+         "--outdir", str(wav_dir), "--alpha", str(alpha)],
+        capture_output=False,
     )
     if r.returncode != 0:
         die("IndexTTS 合成失败，看上面的报错")
@@ -379,9 +382,9 @@ def run_clone(lines, out_dir, alpha, overwrite=False, dry_run=False):
             continue
         if mp3.exists() and not overwrite:
             continue
-        rr = subprocess.run(
-            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav), "-codec:a", "libmp3lame", "-q:a", "2", str(mp3)],
-            capture_output=True, text=True,
+        rr = run_cmd(
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav),
+             "-codec:a", "libmp3lame", "-q:a", "2", str(mp3)]
         )
         if rr.returncode != 0:
             raise RuntimeError(f"ffmpeg 转 mp3 失败：{rr.stderr.strip()}")
