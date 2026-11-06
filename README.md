@@ -76,15 +76,14 @@ bash 00-工作台/new_project.sh 我的第一部沙雕剧
 
 ## 密钥与隐私
 
-**仓库里不含任何密钥。** 需要生图时，用环境变量或本地 `.env`：
+**仓库里不含任何密钥。** 生图脚本只认进程环境变量，不打开任何配置文件：
 
 ```bash
-cp .env.example .env
-# 填入 ARK_API_KEY（火山方舟 Seedream）
+export ARK_API_KEY="你的火山方舟密钥"     # 或先 source 自己的密钥文件
 ```
 
-- `.env` 已在 `.gitignore` 中，不会被提交
-- 脚本读 `.env` 只为取本机的 `ARK_API_KEY`，不会上传或外发；生图请求只发往火山方舟 API
+- 密钥只从 `$ARK_API_KEY` 读，脚本不读配置文件、不读 `~/.ssh` / `~/.aws`
+- 生图请求只发往火山方舟 API，不会把密钥或素材发到别处
 - **edge-tts 会把台词文本发到微软在线语音服务**（它需要联网）；不能外发的剧本用 `--engine say`（macOS 本地）或 `--engine clone`（本地 IndexTTS）
 - `ARK_API_KEY` 是可选项：不填就跳过 AI 生图，自己准备素材
 - IndexTTS 克隆引擎需要额外工具链，用 `SHADIAO_TOOLCHAIN` 指过去；不用就留空，草稿音走 edge-tts

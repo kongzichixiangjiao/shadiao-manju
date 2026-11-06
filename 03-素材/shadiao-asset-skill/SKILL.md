@@ -210,10 +210,10 @@ python3 scripts/make_index.py --season-dir 99-项目/<剧名>/第01季
 
 ## 四、生图通道
 
-默认用本目录的 Seedream 脚本，密钥只从环境变量或 `.env` 读：
+默认用本目录的 Seedream 脚本，密钥只从环境变量 `ARK_API_KEY` 读（脚本不打开任何配置文件）：
 
 ```bash
-cp ../../.env.example ../../.env      # 填 ARK_API_KEY
+export ARK_API_KEY="你的火山方舟密钥"     # 或 source 自己的密钥文件
 python3 scripts/gen_seedream.py \
   --out 角色/阿强/body.png \
   --prompt "……" --size 1024x1536

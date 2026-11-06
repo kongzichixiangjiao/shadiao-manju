@@ -6,10 +6,10 @@
   - ai-manju-production 里的 seedream_multi.py 绑死了那套季目录结构；
   - 本 skill 需要「一张图一个命令」，并且要能带参考图、能指定 9:16。
 
-密钥查找顺序：
-  $ARK_API_KEY → 仓库根目录 .env → $SHADIAO_ENV 指定的 .env
+密钥只从环境变量读：
+  export ARK_API_KEY=...        # 或者先 source 你自己的密钥文件，再跑本脚本
 
-本仓库不包含任何密钥；.env 已被 .gitignore 忽略。
+本仓库不包含任何密钥，本脚本也不读任何配置文件。
 
 用法：
   python3 gen_seedream.py --out 背景/会议室.png \
@@ -25,7 +25,6 @@ import os
 import sys
 import time
 import urllib.request
-from pathlib import Path
 from urllib.parse import urlparse
 
 from openai import OpenAI
@@ -33,28 +32,10 @@ from openai import OpenAI
 DEFAULT_MODEL = "doubao-seedream-5-0-pro-260628"
 ARK_BASE = "https://ark.cn-beijing.volces.com/api/v3"
 
-SKILL_ROOT = Path(__file__).resolve().parents[3]
-ENV_PATHS = [
-    SKILL_ROOT / ".env",
-    Path(
-        os.environ.get("SHADIAO_ENV", Path.home() / ".config" / "shadiao" / ".env")
-    ).expanduser(),
-]
-
 
 def find_key():
-    key = os.environ.get("ARK_API_KEY", "").strip()
-    if key:
-        return key
-    for path in ENV_PATHS:
-        if not os.path.isfile(path):
-            continue
-        for line in open(path, encoding="utf-8"):
-            if line.strip().startswith("ARK_API_KEY="):
-                v = line.split("=", 1)[1].strip().strip('"').strip("'")
-                if v:
-                    return v
-    return ""
+    # 只认进程环境变量：不读配置文件、不碰 $HOME 下的任何东西
+    return os.environ.get("ARK_API_KEY", "").strip()
 
 
 def to_data_url(path):
@@ -62,15 +43,9 @@ def to_data_url(path):
         return "data:image/png;base64," + base64.b64encode(fh.read()).decode()
 
 
-# 只从已知的图片 CDN 下载：返回的 URL 由远端控制，不能盲开
+# 只从已知的图片 CDN 下载：返回的 URL 由远端控制，不能盲开。
+# 白名单写死在代码里，不通过环境变量放宽——能被环境变量改宽的白名单等于没有。
 ALLOWED_DOWNLOAD_HOSTS = ("volces.com", "byteimg.com", "bytedance.com")
-
-
-def allowed_hosts():
-    extra = os.environ.get("SHADIAO_DOWNLOAD_HOSTS", "")
-    return ALLOWED_DOWNLOAD_HOSTS + tuple(
-        h.strip().lower() for h in extra.split(",") if h.strip()
-    )
 
 
 def validate_download_url(url):
@@ -79,11 +54,8 @@ def validate_download_url(url):
     if parsed.scheme != "https":
         raise SystemExit(f"✗ 下载地址必须是 https，实际是「{parsed.scheme or '空'}」：{url[:120]}")
     host = (parsed.hostname or "").lower()
-    if not any(host == h or host.endswith("." + h) for h in allowed_hosts()):
-        raise SystemExit(
-            f"✗ 下载地址不在白名单：{host or '<空>'}。\n"
-            "  如果确认是可信 CDN，用 SHADIAO_DOWNLOAD_HOSTS=example.com 追加。"
-        )
+    if not any(host == h or host.endswith("." + h) for h in ALLOWED_DOWNLOAD_HOSTS):
+        raise SystemExit(f"✗ 下载地址不在白名单：{host or '<空>'}（只允许 {', '.join(ALLOWED_DOWNLOAD_HOSTS)}）")
     return url
 
 
@@ -143,7 +115,7 @@ def main():
 
     key = find_key()
     if not key:
-        raise SystemExit("缺 ARK_API_KEY（设置环境变量，或复制 .env.example 为 .env 再填）")
+        raise SystemExit("缺 ARK_API_KEY（先 export ARK_API_KEY=... 再跑；键值只从环境变量读）")
 
     refs = [to_data_url(p) for p in args.refs]
     client = OpenAI(base_url=ARK_BASE, api_key=key, timeout=300)

@@ -73,12 +73,7 @@ install_app() {
   cd "$APP_DIR"
   npm install
 
-  if [ ! -f .env.local ] && [ -f .env.example ]; then
-    # 只复制模板文件给 app 用：不读取内容、不上传、不写日志
-    cp .env.example .env.local
-    info "已生成 .env.local（如需 TTS Provider，按需修改）"
-  fi
-
+  # 宿主 app 自己的运行时配置由它自己管：本 skill 的脚本不读、不写任何配置文件
   ok "安装完成：$APP_DIR"
   info "启动：bash 00-工作台/setup_app.sh start"
 }
@@ -92,8 +87,8 @@ start_app() {
 start_tts() {
   [ -d "$APP_DIR" ] || die "尚未安装，先运行：bash setup_app.sh install"
   cd "$APP_DIR"
-  if [ ! -f examples/tts-provider/.env ]; then
-    warn "未配置 examples/tts-provider/.env，TTS Provider 可能启动失败"
+  if [ ! -d examples/tts-provider ]; then
+    warn "这个版本的 app 没有 examples/tts-provider，TTS Provider 可能启动失败（见 app 自己的 README）"
   fi
   exec npm run dev:with-tts
 }

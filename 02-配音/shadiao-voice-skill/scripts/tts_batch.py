@@ -99,7 +99,7 @@ def season_dir(project, season):
     return PROJECTS_ROOT / safe_name(project) / f"第{season:02d}季"
 
 
-def resolve_voice(voice_name, characters, speaker, voices):
+def resolve_voice(voice_name, characters, speaker, voices, allow_fallback=False):
     presets = voices["voices"]
     aliases = voices.get("aliases", {})
 
@@ -133,7 +133,18 @@ def resolve_voice(voice_name, characters, speaker, voices):
     fallback = "晓晓-暖调女声" if gender == "female" else "云希-清亮少年"
     if speaker in NARRATION_SPEAKERS:
         fallback = "旁白-死鱼眼"
-    print(f"  ! 音色「{voice_name or speaker}」查不到，用兜底 {fallback}", file=sys.stderr)
+
+    # 剧本里点名了音色却查不到：默认停下来，让用户自己决定，不要悄悄换人
+    if name_wanted := (voice_name or "").strip():
+        if not allow_fallback:
+            die(
+                f"音色「{name_wanted}」不在 voices.json 里（角色：{speaker}）。\n"
+                f"  可选预设：{'、'.join(sorted(presets)[:12])} ……\n"
+                "  改剧本里的 voice 字段，或加 --allow-voice-fallback 按性别兜底。"
+            )
+        print(f"  ! 音色「{name_wanted}」查不到，按 --allow-voice-fallback 兜底为 {fallback}", file=sys.stderr)
+    else:
+        print(f"  ! 角色「{speaker}」没指定音色，按性别兜底为 {fallback}", file=sys.stderr)
     return fallback, presets[fallback]
 
 
@@ -200,7 +211,7 @@ def sha1_short(text):
     return hashlib.sha1(text.encode("utf-8")).hexdigest()[:12]
 
 
-def build_lines(script, voices):
+def build_lines(script, voices, allow_fallback=False):
     characters = script.get("characters", [])
     scenes = {s.get("id"): s for s in script.get("scenes", [])}
     out = []
@@ -221,7 +232,7 @@ def build_lines(script, voices):
                 break
         if speaker in NARRATION_SPEAKERS and not voice_name:
             voice_name = "旁白-死鱼眼"
-        preset_name, preset = resolve_voice(voice_name, characters, speaker, voices)
+        preset_name, preset = resolve_voice(voice_name, characters, speaker, voices, allow_fallback)
         used_voice[speaker or "旁白"] = preset_name
 
         out.append({
@@ -387,6 +398,11 @@ def main():
     ap.add_argument("--rate-boost", default="+0%", help="edge 全局语速加成，如 +18%（沙雕默认建议 +15%~+20%）")
     ap.add_argument("--only", help="只跑指定序号，逗号分隔，如 3,7,9")
     ap.add_argument("--force", action="store_true", help="覆盖已存在的音频")
+    ap.add_argument(
+        "--allow-voice-fallback",
+        action="store_true",
+        help="剧本里点名的音色查不到时，按性别兜底，而不是报错退出",
+    )
     ap.add_argument("--dry-run", action="store_true", help="只打印计划，不合成")
     ap.add_argument(
         "--clone-consent",
@@ -409,7 +425,7 @@ def main():
 
     script = json.loads(script_path.read_text(encoding="utf-8-sig"))
     voices = load_voices()
-    lines, used_voice = build_lines(script, voices)
+    lines, used_voice = build_lines(script, voices, args.allow_voice_fallback)
 
     if args.only:
         wanted = {int(x.strip()) for x in args.only.split(",") if x.strip()}

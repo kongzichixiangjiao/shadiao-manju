@@ -137,6 +137,7 @@ python3 02-配音/shadiao-voice-skill/scripts/tts_batch.py \
 | 症状 | 处理 |
 |---|---|
 | `edge-tts` 403 | `pip install -U edge-tts` |
+| 报「音色「X」不在 voices.json 里」 | 剧本 `characters[].voice` 写错了；改成 `voices.json` 里的预设名，或加 `--allow-voice-fallback` 按性别兜底（会在 stderr 打警告） |
 | 某句没生成 | 看 `配音表.json` 里有没有缺项；单独重跑 `--only 3` |
 | IndexTTS 报 device 错 | 加 `--device mps`，或 `--device cpu`（慢但稳） |
 | 生成太慢 | 先 edge 出全片，成品只重跑改动句 |
